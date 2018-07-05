@@ -1,0 +1,151 @@
+---
+title: "Boston airbnb- Sentiment Analysis"
+author: "Rohan Chouthai"
+date: "July 5, 2018"
+output: html_document
+---
+
+SENTIMENT ANALYSIS OF BOSTON AIRBNB 
+
+This analysis aims to do a sentiment analysis of the guest reviews to understand which areas in Boston are more liked by the travellers for booking an airbnb. 
+
+This Dataset consists of 3 individual datasets: Calendar, Listings and Reviews. I have combined the Listings and Reviews datasets at a later point in my project. I'd mostly be working with the Listings dataset.
+
+ a.IMPORTING THE DATA:
+
+First let us load all the three datasets into R.
+
+```{r}
+Calendar<- read.csv("C:/Users/rohan/Desktop/DMML/Boston AIr BNB/calendar.csv")
+
+Listings<- read.csv("C:/Users/rohan/Desktop/DMML/Boston AIr BNB/listings.csv")
+
+Reviews<-read.csv("C:/Users/rohan/Desktop/DMML/Boston AIr BNB/reviews.csv")
+
+```
+
+a. EXPLORATORY DATA ANALYSIS:
+
+In a city as expensive as Boston, there is a lot of curiosity around which areas in Boston are the most expensive. The Listings dataset has a lot of information about the neighbourhood and the price of the listings therein. I will now explore which areas are the most expensive in Boston. 
+
+First, let us subset the columns we require for visualizing this. 
+
+
+```{r}
+suppressWarnings(library(tidyverse))
+
+Daily_Price<- Listings%>% select(host_since,host_location,host_response_time,host_acceptance_rate,host_is_superhost,neighbourhood_cleansed,is_location_exact,property_type,room_type,accommodates,bathrooms,bedrooms,beds,bed_type,price,security_deposit,minimum_nights,maximum_nights)
+dim(Daily_Price)
+
+
+```
+
+Now, let us explore the most expensive neighbourhoods. 
+
+```{r}
+suppressWarnings(library(ggplot2))
+
+Daily_Price$price<-as.integer(Daily_Price$price)
+
+
+Neighbourhoods<-Daily_Price%>% group_by(neighbourhood_cleansed)%>% summarise(Avg_price=mean(price))%>% arrange(desc(Avg_price))
+
+head(Neighbourhoods)
+```
+Looks like Hyde Park is the most expensive neighbourhood in Boston to be renting a bnb in. It costs a whopping $229 per night. Sure we now have the average price per neighbourhood. 
+
+Now, let us visualize the most expensive areas. 
+
+```{r}
+ggplot(Neighbourhoods)+geom_bar(mapping = aes(reorder(neighbourhood_cleansed,Avg_price),Avg_price,fill=Avg_price),stat = "identity")+coord_flip()+xlab("Neighbourhood")+ylab("Average Price")
+
+```
+
+We can easily see that North End seems to be the cheaper place to rent out an bnb in. But what do the people who have stayed here got to say about Northend? ( Sentiment analysis to follow in the last part)
+
+b. SENTIMENT ANALYSIS
+
+We saw in the Exploratory Data Analysis the most expensive neighbourhoods in Boston. But what did people who stayed there have to say about the neighbourhood? I want to explore the general sentiment of the neighbourhood and compare it with the average price paid for the listing in that neighbourhood. 
+
+I will use the Reviews dataset for this purpose. Then, after tokenizing the reviews per listing, I will join the price, neighbourhood and few other important columns from the Listings dataset. And then, I will proceed to analyze the sentiments and plot them for the neighbourhood.
+
+
+Let us load the data in the Tidytext format.
+
+```{r}
+suppressWarnings(library(tidyr))
+suppressWarnings(library(tidytext))
+```
+
+
+We need our comments to be of character type. So I will first convert it into character and then unnest tokens by words. 
+```{r}
+ 
+Reviews$comments<-as.character(Reviews$comments)
+
+Reviews_words<-Reviews%>% select(listing_id,comments)%>%unnest_tokens(word,comments)
+```
+
+Now, let us remove all the stop words from our dataframe. 
+```{r}
+Reviews_words<-Reviews_words%>% anti_join(stop_words,by="word")
+```
+
+
+Positive and Negative sentiment per review:
+
+I now wish to see the overall sentiment for each neighbourhood. I will use the "Bing" sentiments for assigning a total positive and negative score to each listing, Basically, each word is matched with the Bing sentiments as falling in either positive or negative sentiment and then the number of positive and negative sentiments are counted. Ultimately, my mutating a new column called Sentiment which is the difference between the positive and negative word score for each listing, we get the overall sentiment. Lastly, I have grouped the listings by area. 
+
+```{r}
+Sentiment_reviews<-Reviews_words%>% inner_join(get_sentiments("bing"),by="word")%>% count(listing_id,sentiment)%>% spread(sentiment,n)%>% mutate(sentiment=positive-negative)
+
+Sentiment_reviews<-as.tibble(Sentiment_reviews)
+
+# Making sure I remove the NAs. 
+Sentiment_reviews$negative<-ifelse(Sentiment_reviews$negative %in% NA,0,Sentiment_reviews$negative)
+Sentiment_reviews$positive<-ifelse(Sentiment_reviews$positive %in% NA,0,Sentiment_reviews$positive)
+
+Sentiment_reviews$sentiment<-Sentiment_reviews$positive-Sentiment_reviews$negative
+
+Sentiment_reviews_top10<-Sentiment_reviews%>% arrange(desc(Sentiment_reviews$sentiment))%>% top_n(10)
+
+
+str(Sentiment_reviews)
+
+colnames(Sentiment_reviews)<-c("id","negative","positive","sentiment") # amking sure the primary key of the dataframe matches with the primary key of the Listings dataframe.
+
+```
+
+
+Let us determine how the sentiment is related to the average rating of the listing. I will join the Listings dataframe to the Sentiment_reviews dataframe so that we get information about all the listings we are analyzing sentiments for. 
+
+
+```{r}
+Sentiment_analysis<-Sentiment_reviews%>% left_join(Listings,by="id")
+
+head(Sentiment_analysis)
+```
+
+Now, let us select the neighbourhood and the price along with the sentiments.
+
+```{r}
+
+Sa<-Sentiment_analysis%>% group_by(neighbourhood_cleansed)%>% summarise(Sentiment=mean(sentiment),Price=mean(as.numeric(price)))
+
+head(Sa)
+```
+
+
+Now, let us plot the sentiment vs price.
+
+```{r}
+suppressWarnings(library(ggrepel))
+
+ggplot(data = Sa,mapping = aes(x=as.integer(Sa$Sentiment),y=as.integer(Sa$Price)))+geom_point(aes(color=neighbourhood_cleansed,size=(Price)))+xlab("Sentiment_score")+ylab("Price_per_day")+geom_text_repel(aes(x=as.integer(Sa$Sentiment),y=as.integer(Sa$Price), hjust = 1 ,label=ifelse(as.integer(Sa$Sentiment)>400,as.character(neighbourhood_cleansed),''))) + theme_bw() + theme(legend.position="none") + geom_text_repel(aes(as.integer(Sa$Sentiment),as.integer(Sa$Price) ,label=ifelse((as.integer(Sa$Sentiment) < 70),as.character(neighbourhood_cleansed),''))) + theme_bw() + theme(legend.position="none") 
+       
+```
+
+
+
+Thus, we can see that even if Hyde park neighbourhood is one of the most expensive, it's sentiment score isnt all that high. Longwood medical area, on the other hand has a high sentiment score as well as a high daily price. 
+
