@@ -1,0 +1,436 @@
+---
+title: "Donald Trump Speeches Sentiment Analysis- Rohan Chouthai"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+How exactly did Donald Trump surprise the world and became the President of US? Let us take a look at what is it that he said to the people of US that appealed the most to them. 
+
+I will perform a sentiment analysis of all the 56 speeches Trump gave across US en route to the Oval office. 
+
+Let us load the libraries we are going to use. 
+```{r}
+suppressWarnings(library(readr))
+suppressWarnings(library(tidyverse))
+suppressWarnings(library(stringr))
+suppressWarnings(library(tidytext))
+suppressWarnings(library(tm))
+
+```
+
+Now, let us start by loading the text file of Trump's speeches. 
+
+```{r}
+Trump_speeches<-read_lines("C:/Users/rohan/Desktop/DMP/Assignment 3/full_speech.txt")
+
+```
+
+
+Create a corpus of all the speeches in the text file
+```{r}
+Trump_corpus<-VCorpus(VectorSource(Trump_speeches))
+print(Trump_corpus)
+```
+
+We need to first clean the speeches of the common stop words, white spaces and punctuation marks. 
+
+
+Let us start of by converting all the upper case letters to lower case letters. 
+
+```{r}
+Trump_corpus_clean<-tm_map(Trump_corpus,content_transformer(tolower))
+
+```
+
+Let us now continue to remove all the numbers. 
+
+```{r}
+Trump_corpus_clean<-tm_map(Trump_corpus_clean,removeNumbers)
+```
+Next, we will remove all the stop words. 
+
+```{r}
+Trump_corpus_clean<-tm_map(Trump_corpus_clean,removeWords,stopwords())
+
+```
+We also want to remove the word "Applause". Let us do that now. 
+
+```{r}
+Trump_corpus_clean<-tm_map(Trump_corpus_clean,removeWords,"applause")
+
+```
+
+Let us now move forward and remove the punctuation marks. 
+```{r}
+Trump_corpus_clean<-tm_map(Trump_corpus_clean,removePunctuation)
+
+```
+
+Let us now standardize the text by stemming. 
+
+```{r}
+library(SnowballC)
+#Trump_corpus_clean<-tm_map(Trump_corpus_clean,stemDocument)
+```
+
+Finally, let us remove the white spaces in our corpus. 
+```{r}
+Trump_corpus_clean<-tm_map(Trump_corpus_clean,stripWhitespace)
+
+```
+
+Let us now make a Document Term Matrix of our corpus. 
+
+```{r}
+Trump_dcm<-DocumentTermMatrix(Trump_corpus_clean)
+Trump_dcm
+```
+
+Now, let us remove the sparce terms from our DCM. 
+```{r}
+Trump_dcm_sparce<-removeSparseTerms(Trump_dcm,.5)
+Trump_final<-as.data.frame(as.matrix(Trump_dcm_sparce))
+dim(Trump_final)
+Trump_final[,1:10]
+```
+Now let us plot the 15 most common words that featured in Trump's speeches. 
+
+```{r}
+Most_common<-colSums(Trump_final)
+sort(Most_common,decreasing = TRUE)[1:15]
+```
+
+
+We will make a wordcloud of these words now. 
+
+```{r}
+wordcloud::wordcloud(names(Most_common),Most_common,random.order = FALSE,max.words = 15,colors = blues9)
+```
+Now, let us get the word frequencies in a dataframe so that we can plot them. 
+```{r}
+Word_freq<-as.data.frame(Most_common)
+
+head(Word_freq)
+Word_freq$Word<-rownames(Word_freq)
+rownames(Word_freq)<-c()
+Word_freq<-Word_freq[c(2,1)]
+
+colnames(Word_freq)<-c("Word","Frequency")
+head(Word_freq)
+Word_freq$Word<-as.factor(Word_freq$Word)
+```
+
+Let us now create a bar plot of the top 15 most commonly used words by Trump. 
+
+```{r}
+str(Word_freq)
+Top_15<-Word_freq[1:15,]
+
+dim(Top_15)
+ggplot(Top_15)+geom_bar(mapping = aes(reorder(Word,Frequency),Frequency,fill=Frequency),stat = "identity")+coord_flip()
+```
+
+
+PART B
+
+In this part, I will:
+Re-tokenize the text of all 56 Donald Trump Speeches into a new tidy text data frame, using bigrams as
+tokens. Remove each bigram where either word is a stop word or the word "applause". Then plot the top 15
+most common bigrams in Trump's speeches.
+
+For the part A, I have used the corpus format. Now, I will use the tidytext format. 
+
+
+```{r}
+Trump_s<-tibble(line=1:length(Trump_speeches),text=Trump_speeches)
+Trump_s
+dim(Trump_s)
+```
+Now, let us tidy the data.
+
+```{r}
+tidy_speeches<-Trump_s%>% unnest_tokens(word,text)
+tidy_speeches
+```
+
+Now, let us first see the most common words. This is essentially an easier way to solve the problem 6. 
+
+Before we proceed, let us first remove the common stop words. 
+```{r}
+
+new_list<-c("Applause")
+new_list<-as.data.frame(new_list)
+new_list$lexicon<-c("SMART")
+colnames(new_list)<-c("word","lexicon")
+new_list$word<-as.character(new_list$word)
+stop_words<-rbind(stop_words,new_list)
+tidy_speeches_imp<-tidy_speeches%>% anti_join(stop_words,by="word")%>% count(word,sort = TRUE)
+tidy_speeches_final<-tidy_speeches_imp[-3,] #removing the word applause
+colnames(tidy_speeches_final)<-c("Word_used","n")
+
+```
+
+Now, let us plot the top 15 most used words. 
+
+```{r}
+Top15_words<-tidy_speeches_final[1:15,]
+ggplot(Top15_words)+geom_bar(mapping = aes(reorder(Word_used,n),n,fill=n),stat = "identity")+coord_flip()
+```
+
+
+Now, let us create a bigram of the Trump speeches. We will do so to get a deeper context in which the words were actually used. 
+
+```{r}
+
+Trump_bigrams<-Trump_s%>% unnest_tokens(bigram,text,token = "ngrams",n=2)
+Trump_bigrams
+```
+
+```{r}
+tidy_speeches_big<-tidy_speeches%>% anti_join(stop_words,by="word")
+str(tidy_speeches_big)
+str(Trump_s)
+
+```
+
+
+
+Now let us check the most common bigrams. 
+
+```{r}
+Trump_bigrams<-Trump_bigrams%>%count(bigram,sort = TRUE)
+Trump_bigrams
+```
+We can see that there are still stop words in the bigrams which we should eliminate. 
+
+For that, we will first split the bigrams into two words, eliminate the stop words and then reunite the words to form a bigram again. 
+
+
+```{r}
+library(tidyr)
+Trump_bigrams_sep<-Trump_bigrams%>%separate(bigram,c("word1","word2"),sep = " ")
+Trump_bigrams_sep
+
+Trump_bigrams_sep<-Trump_bigrams_sep%>% filter(!word1 %in% stop_words$word)%>%filter(!word2 %in% stop_words$word)
+
+Trump_bigrams_sep
+```
+
+Now let us unite these bigrams again so that we can plot it. 
+
+```{r}
+Trump_bigrams_final<-Trump_bigrams_sep%>% unite(bigram,word1,word2,sep = " ")
+Trump_bigrams_final
+```
+
+Now, let us plot the top 15 most commonly used bigrams in Trump's speeches. 
+
+```{r}
+Top15_bigram<-Trump_bigrams_final[1:15,]
+ggplot(Top15_bigram)+geom_bar(mapping = aes(reorder(bigram,n),n,fill=n),stat = "identity")+coord_flip()
+
+```
+
+
+
+PART C
+
+For the part C, I will do the following:
+
+A sentiment analysis of Donald Trump's speeches. In order to make sure sentiments are
+assigned to appropriate contexts, first tokenize the speeches into bigrams, and then filter out all bigrams
+where the first word is any of "not", "no", or "never".
+
+Now, we have to remove the bigrams where the first words are "no","not","never".
+
+For that, let us use the separated bigrams from the previous question. 
+
+```{r}
+Negative<-c("no","not","never")
+Tr<-c("trump","applause")
+Trump_bigram_senti<-Trump_bigrams_sep%>% filter(!word1 %in% Negative)%>% filter(!word2%in% Tr)
+
+Trump_bigram_senti%>% filter(word2=="trump")# checking if the word elimination worked.
+Trump_bigram_senti%>% filter(word1=="no")
+```
+
+Now let us get each of the 10 sentiments in the nrc into 10 separate dataframes.
+
+We will need these to do the further analysis. 
+
+
+```{r}
+nrc<-get_sentiments("nrc")
+unique(nrc$sentiment)
+nrc_trust<-nrc%>%filter(sentiment=="trust")
+nrc_fear<-nrc%>%filter(sentiment=="fear")
+nrc_negative<-nrc%>%filter(sentiment=="negative")
+nrc_sadness<-nrc%>%filter(sentiment=="sadness")
+nrc_anger<-nrc%>%filter(sentiment=="anger")
+nrc_surprise<-nrc%>%filter(sentiment=="suprise")
+nrc_positive<-nrc%>%filter(sentiment=="positive")
+nrc_disgust<-nrc%>%filter(sentiment=="disgust")
+nrc_joy<-nrc%>%filter(sentiment=="joy")
+nrc_anticipation<-nrc%>%filter(sentiment=="anticipation")
+```
+Let us first create a new column in our dataframe so that we can later join the sentiment dataframes. 
+
+```{r}
+Trump_bigram_senti$word<-Trump_bigram_senti$word2
+Trump_sentiment<-Trump_bigram_senti[,4]
+class(Trump_sentiment)
+
+```
+
+Now, let us see the top 10 words in Trump's speeches associated with trust. 
+
+```{r}
+
+Trust_trump<-Trump_sentiment%>% inner_join(nrc_trust,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(Trust_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Trust_words",y="Number")
+
+```
+Now, let us see the top 10 words in Trump's speeches associated with Fear. 
+
+```{r}
+
+Fear_trump<-Trump_sentiment%>% inner_join(nrc_fear,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(Fear_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Fear_words",y="Number")
+
+```
+
+
+Now, let us see the top 10 words in Trump's speeches associated with negative. 
+
+```{r}
+
+Negative_trump<-Trump_sentiment%>% inner_join(nrc_negative,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(Negative_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Negative_words",y="Number")
+
+```
+
+Now, let us see the top 10 words in Trump's speeches associated with sadness. 
+
+```{r}
+
+Sad_trump<-Trump_sentiment%>% inner_join(nrc_sadness,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(Sad_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Sad_words",y="Number")
+
+```
+
+Now, let us see the top 10 words in Trump's speeches associated with anger. 
+
+```{r}
+
+Anger_trump<-Trump_sentiment%>% inner_join(nrc_anger,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(Anger_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Anger_words",y="Number")
+
+```
+
+Now, let us see the top 10 words in Trump's speeches associated with surprise. 
+
+```{r}
+
+Surprise_trump<-Trump_sentiment%>% inner_join(nrc_surprise,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(Surprise_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Trust_words",y="Number")
+
+```
+There are no surprise words in trump's speeches. 
+
+Now, let us see the top 10 words in Trump's speeches associated with positive. 
+
+```{r}
+
+Positive_trump<-Trump_sentiment%>% inner_join(nrc_positive,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(Positive_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Positive_words",y="Number")
+
+```
+
+Now, let us see the top 10 words in Trump's speeches associated with disgust. 
+
+```{r}
+
+disgust_trump<-Trump_sentiment%>% inner_join(nrc_disgust,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(disgust_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Disgust_words",y="Number")
+
+```
+
+
+Now, let us see the top 10 words in Trump's speeches associated with joy. 
+
+```{r}
+
+joy_trump<-Trump_sentiment%>% inner_join(nrc_joy,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(joy_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="Joy_words",y="Number")
+
+```
+
+Now, let us see the top 10 words in Trump's speeches associated with anticipation. 
+
+```{r}
+
+anticipation_trump<-Trump_sentiment%>% inner_join(nrc_anticipation,by="word")%>% count(word)%>%top_n(10)
+
+ggplot(anticipation_trump)+geom_bar(mapping = aes(reorder(word,n),n,fill=n),stat = "identity")+coord_flip()+labs(x="anticipation_words",y="Number")
+
+```
+
+
+
+
+
+
+PART D
+
+
+In this part, I will write a function to tokenize an input corpus and spit out the most frequent words. The idea is to automate the process of data cleansing and get a glimpse into the data at the first go. 
+
+
+
+```{r}
+Text_analysis_corpus<-function(mysrc_clean,nwords){
+  mysrc_clean<-tm_map(mysrc_clean,removeNumbers)
+  mysrc_clean<-tm_map(mysrc_clean,removeWords,stopwords())
+  mysrc_clean<-tm_map(mysrc_clean,removePunctuation)
+  library(SnowballC)
+  mysrc_clean<-tm_map(mysrc_clean,stripWhitespace)
+ mysrc_dcm<-DocumentTermMatrix(mysrc_clean)
+
+ 
+ mysrc_sparce<-removeSparseTerms(mysrc_dcm,.5)
+mysrc_final<-as.data.frame(as.matrix(mysrc_sparce))
+Most_common<-colSums(Trump_final)
+Top_words<-sort(Most_common,decreasing = TRUE)[1:nwords]
+Word_freq<-as.data.frame(Top_words)
+
+
+Word_freq$Word<-rownames(Word_freq)
+rownames(Word_freq)<-c()
+Word_freq<-Word_freq[c(2,1)]
+
+colnames(Word_freq)<-c("Word","Frequency")
+
+Word_freq$Word<-as.factor(Word_freq$Word)
+
+ggplot(Word_freq)+geom_bar(mapping = aes(reorder(Word,Frequency),Frequency,fill=Frequency),stat = "identity")+coord_flip()
+ }
+```
+Let us test if the method works. 
+
+We will use the corpus from the question 6. 
+
+```{r}
+Text_analysis_corpus(Trump_corpus,5)
+```
+
+
